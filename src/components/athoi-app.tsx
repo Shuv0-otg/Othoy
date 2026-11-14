@@ -104,12 +104,47 @@ export function AthoiApp() {
   const dlg = useRef<HTMLDialogElement>(null);
   const bag = useRef({ view, learn, quiz, store });
   bag.current = { view, learn, quiz, store };
+  const histOn = useRef(false);
+
+  function sameView(a: View, b: View) {
+    if (a.t !== b.t) return false;
+    if (!("s" in a) || !("s" in b)) return true;
+    return a.s === b.s;
+  }
+  function go(next: View, replace = false) {
+    setView(next);
+    if (!histOn.current) return;
+    const cur = history.state?.athoi as View | undefined;
+    if (!replace && cur && sameView(cur, next)) return;
+    const d = replace ? ((history.state?.d as number) ?? 0) : ((history.state?.d as number) ?? 0) + 1;
+    const data = { athoi: next, d };
+    if (replace) history.replaceState(data, "");
+    else history.pushState(data, "");
+  }
+  function back(fallback: View) {
+    if (((history.state?.d as number) ?? 0) > 0) history.back();
+    else go(fallback, true);
+  }
 
   useEffect(() => {
     const s = load();
     setStore(s);
     if (s.theme) document.documentElement.dataset.theme = s.theme;
     setReady(true);
+  }, []);
+  useEffect(() => {
+    if (!history.state?.athoi) history.replaceState({ athoi: { t: "home" }, d: 0 }, "");
+    histOn.current = true;
+    function onPop(e: PopStateEvent) {
+      const st = (e.state?.athoi ?? { t: "home" }) as View;
+      if ((st.t === "quiz" || st.t === "done") && !bag.current.quiz) {
+        setView({ t: "home" });
+        return;
+      }
+      setView(st);
+    }
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
   }, []);
   useEffect(() => {
     if (!ready) return;
@@ -177,7 +212,7 @@ export function AthoiApp() {
     setRf("all");
     setQuiz({ list, title, sub: subject, ck, i: 0, a: list.map(() => null), t0: Date.now(), fin: false, sec: 0, score: 0 });
     setNow(Date.now());
-    setView({ t: "quiz" });
+    go({ t: "quiz" });
   }
   function pick(i: number) {
     setQuiz((q) => {
@@ -213,7 +248,7 @@ export function AthoiApp() {
       return { ...s, mist, done, hist };
     });
     setQuiz({ ...qz, fin: true, sec, score });
-    setView({ t: "done" });
+    go({ t: "done" }, true);
   }
 
   useEffect(() => {
@@ -251,11 +286,11 @@ export function AthoiApp() {
     return (
       <header className="top">
         <div>
-          <button className="logo" onClick={() => setView(inSub ? { t: "hub", s: sub } : { t: "home" })}>
+          <button className="logo" onClick={() => go(inSub ? { t: "hub", s: sub } : { t: "home" })}>
             <i>অ</i>অথৈ
           </button>
           {inSub ? (
-            <button className="btn" onClick={() => setView({ t: "home" })}>
+            <button className="btn" onClick={() => go({ t: "home" })}>
               সব বিষয়
             </button>
           ) : null}
@@ -278,7 +313,7 @@ export function AthoiApp() {
     return (
       <nav className="m" aria-label="বিষয়ের মেনু">
         {items.map((it) => (
-          <button key={it.id} className={view.t === it.id ? "on" : ""} onClick={() => setView({ t: it.id, s: sub } as View)}>
+          <button key={it.id} className={view.t === it.id ? "on" : ""} onClick={() => go({ t: it.id, s: sub } as View)}>
             {it.label}
           </button>
         ))}
@@ -332,7 +367,7 @@ export function AthoiApp() {
             const kn = list.filter((q) => has(store.known, q.id)).length;
             const started = kn > 0 || store.hist.some((h) => h.sub === s.id);
             return (
-              <button key={s.id} className="tile" onClick={() => setView({ t: "hub", s: s.id })}>
+              <button key={s.id} className="tile" onClick={() => go({ t: "hub", s: s.id })}>
                 <span className="num">{String(i + 1).padStart(2, "0")}</span>
                 <h3>{s.name}</h3>
                 <p>{s.blurb}</p>
@@ -383,22 +418,22 @@ export function AthoiApp() {
           </div>
         </div>
         <div className="grid">
-          <button className="tile pri" onClick={() => setView({ t: "learn", s: id })}>
+          <button className="tile pri" onClick={() => go({ t: "learn", s: id })}>
             <h3>পড়ো</h3>
             <p>কার্ডে প্রশ্ন, উত্তর লুকিয়ে মনে করার অভ্যাস।</p>
             <span className="go">কার্ড খোলো ›</span>
           </button>
-          <button className="tile" onClick={() => setView({ t: "sets", s: id })}>
+          <button className="tile" onClick={() => go({ t: "sets", s: id })}>
             <h3>সেট পরীক্ষা</h3>
             <p>ধারাবাহিক ছোট সেট, যেমনটা খাতায় হয়।</p>
             <span className="go">সেট দেখো ›</span>
           </button>
-          <button className="tile" onClick={() => setView({ t: "rand", s: id })}>
+          <button className="tile" onClick={() => go({ t: "rand", s: id })}>
             <h3>এলোমেলো</h3>
             <p>যতগুলো চাও, নতুন ড্র।</p>
             <span className="go">সংখ্যা ঠিক করো ›</span>
           </button>
-          <button className="tile" onClick={() => setView({ t: "prog", s: id })}>
+          <button className="tile" onClick={() => go({ t: "prog", s: id })}>
             <h3>অগ্রগতি</h3>
             <p>জানা, সেভ, আর সাম্প্রতিক স্কোর।</p>
             <span className="go">দেখো ›</span>
@@ -790,8 +825,7 @@ export function AthoiApp() {
             className="btn"
             onClick={() => {
               if (!quiz.a.some((x) => x != null) || confirm("পরীক্ষা ছেড়ে যাবে? উত্তর থাকবে না।")) {
-                setQuiz(null);
-                setView(quiz.sub !== "all" && SUBJ[quiz.sub] ? { t: "hub", s: quiz.sub } : { t: "home" });
+                back(quiz.sub !== "all" && SUBJ[quiz.sub] ? { t: "hub", s: quiz.sub } : { t: "home" });
               }
             }}
           >
@@ -887,11 +921,7 @@ export function AthoiApp() {
             </button>
             <button
               className="btn"
-              onClick={() => {
-                const back = quiz.sub;
-                setQuiz(null);
-                setView(back !== "all" && SUBJ[back] ? { t: "hub", s: back } : { t: "home" });
-              }}
+              onClick={() => back(quiz.sub !== "all" && SUBJ[quiz.sub] ? { t: "hub", s: quiz.sub } : { t: "home" })}
             >
               শেষ
             </button>
